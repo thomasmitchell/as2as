@@ -12,7 +12,7 @@ func main() {
 	cmdIndex["dump"] = &dumpCmd{
 		ClientID:     dumpCom.Flag("client-id", "The client id to auth with").String(),
 		ClientSecret: dumpCom.Flag("client-secret", "The client secret to auth with").String(),
-		UAAHost:      dumpCom.Flag("uaa-host", "The UAA host to authenticate against").String(),
+		CFHost:       dumpCom.Flag("cf-host", "The CF API host to scrape from").String(),
 		PCFASHost:    dumpCom.Flag("pcfas-host", "The PCF Autoscaler API to talk to").String(),
 		SpaceGUID:    dumpCom.Flag("space-guid", "(temp) the guid of the space to scrape").String(),
 	}

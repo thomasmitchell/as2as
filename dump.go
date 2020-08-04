@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
-	"github.com/doomsday-project/doomsday/storage/uaa"
+	"github.com/cloudfoundry-community/go-cfclient"
 	"github.com/thomasmitchell/as2as/models"
 	"github.com/thomasmitchell/as2as/pcfas"
 )
@@ -14,7 +15,7 @@ import (
 type dumpCmd struct {
 	ClientID     *string
 	ClientSecret *string
-	UAAHost      *string
+	CFHost       *string
 	PCFASHost    *string
 	SpaceGUID    *string
 }
@@ -22,19 +23,27 @@ type dumpCmd struct {
 func (d *dumpCmd) Run() error {
 	u := url.URL{
 		Scheme: "https",
-		Host:   *d.UAAHost,
+		Host:   *d.CFHost,
 	}
 
-	uaaClient := uaa.Client{
-		URL: u.String(),
+	cfClientConfig := &cfclient.Config{
+		ApiAddress:   u.String(),
+		ClientID:     *d.ClientID,
+		ClientSecret: *d.ClientSecret,
+		UserAgent:    "Go-CF-client/1.1",
 	}
 
-	tokenResp, err := uaaClient.ClientCredentials(*d.ClientID, *d.ClientSecret)
+	cf, err := cfclient.NewClient(cfClientConfig)
 	if err != nil {
-		return fmt.Errorf("Error retrieving auth token: %s", err)
+		return fmt.Errorf("Error initializing CF client: %s")
 	}
 
-	token := tokenResp.AccessToken
+	token, err := cf.GetToken()
+	if err != nil {
+		return fmt.Errorf("Error retrieving auth token: %s")
+	}
+
+	token = strings.TrimPrefix(token, "bearer ")
 
 	pcfasClient := pcfas.NewClient(*d.PCFASHost, token)
 	if globalTrace != nil && *globalTrace {
