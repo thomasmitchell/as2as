@@ -68,11 +68,6 @@ func (p *Client) newRequest(method, path string, query map[string]string, body i
 	return req, nil
 }
 
-type AppsResponse struct {
-	Pagination Pagination `json:"pagination"`
-	Resources  []App      `json:"resources"`
-}
-
 func (p *Client) doRequest(request *http.Request, out interface{}) error {
 	if p.trace != nil {
 		reqDump, err := httputil.DumpRequestOut(request, true)
@@ -80,7 +75,7 @@ func (p *Client) doRequest(request *http.Request, out interface{}) error {
 			return fmt.Errorf("Error dumping request: %s", err)
 		}
 
-		_, err = p.trace.Write(reqDump)
+		_, err = p.trace.Write(append(reqDump, []byte("\n  ***\n\n")...))
 		if err != nil {
 			return fmt.Errorf("Error writing request dump: %s", err)
 		}
@@ -102,7 +97,7 @@ func (p *Client) doRequest(request *http.Request, out interface{}) error {
 			return fmt.Errorf("Error dumping response: %s", err)
 		}
 
-		_, err = p.trace.Write(respDump)
+		_, err = p.trace.Write(append(respDump, []byte("\n--------------------\n\n")...))
 		if err != nil {
 			return fmt.Errorf("Error writing response dump: %s", err)
 		}
@@ -137,6 +132,11 @@ type InstanceLimits struct {
 }
 
 func (p *Client) AppsForSpaceWithGUID(guid string) ([]App, error) {
+	type AppsResponse struct {
+		Pagination Pagination `json:"pagination"`
+		Resources  []App      `json:"resources"`
+	}
+
 	currentPage := 1
 	resources := []App{}
 	for {
@@ -147,6 +147,109 @@ func (p *Client) AppsForSpaceWithGUID(guid string) ([]App, error) {
 			map[string]string{
 				"space_guid": guid,
 				"page":       strconv.Itoa(currentPage),
+			},
+			nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		err = p.doRequest(req, &responseBodyObj)
+		if err != nil {
+			return nil, err
+		}
+
+		resources = append(resources, responseBodyObj.Resources...)
+
+		totalPages := responseBodyObj.Pagination.TotalPages
+		if totalPages >= currentPage {
+			break
+		}
+
+		currentPage++
+	}
+
+	return resources, nil
+}
+
+type Rule struct {
+	GUID             string        `json:"guid"`
+	ComparisonMetric string        `json:"comparision_metric"`
+	Metric           string        `json:"metric"`
+	QueueName        string        `json:"queue_name"`
+	RuleType         string        `json:"rule_type"`
+	RuleSubType      string        `json:"rule_sub_type"`
+	Threshold        RuleThreshold `json:"threshold"`
+}
+
+type RuleThreshold struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
+}
+
+func (p *Client) RulesForAppWithGUID(guid string) ([]Rule, error) {
+	type RulesResponse struct {
+		Pagination Pagination `json:"pagination"`
+		Resources  []Rule     `json:"resources"`
+	}
+
+	currentPage := 1
+	resources := []Rule{}
+	for {
+		responseBodyObj := RulesResponse{}
+		req, err := p.newRequest(
+			"GET",
+			"/api/v2/apps/"+guid+"/rules",
+			map[string]string{
+				"page": strconv.Itoa(currentPage),
+			},
+			nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		err = p.doRequest(req, &responseBodyObj)
+		if err != nil {
+			return nil, err
+		}
+
+		resources = append(resources, responseBodyObj.Resources...)
+
+		totalPages := responseBodyObj.Pagination.TotalPages
+		if totalPages >= currentPage {
+			break
+		}
+
+		currentPage++
+	}
+
+	return resources, nil
+}
+
+type ScheduledLimitChange struct {
+	GUID           string         `json:"guid"`
+	Enabled        bool           `json:"enabled"`
+	ExecutesAt     string         `json:"executes_at"`
+	InstanceLimits InstanceLimits `json:"instance_limits"`
+	Recurrence     int            `json:"recurrence"`
+}
+
+func (p *Client) ScheduledLimitChangesForAppWithGUID(guid string) ([]ScheduledLimitChange, error) {
+	type ScheduledLimitChangeResponse struct {
+		Pagination Pagination             `json:"pagination"`
+		Resources  []ScheduledLimitChange `json:"resources"`
+	}
+
+	currentPage := 1
+	resources := []ScheduledLimitChange{}
+	for {
+		responseBodyObj := ScheduledLimitChangeResponse{}
+		req, err := p.newRequest(
+			"GET",
+			"/api/v2/apps/"+guid+"/scheduled_limit_changes",
+			map[string]string{
+				"page": strconv.Itoa(currentPage),
 			},
 			nil,
 		)

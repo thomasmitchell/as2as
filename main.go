@@ -7,11 +7,18 @@ import (
 	"os"
 
 	"github.com/doomsday-project/doomsday/storage/uaa"
+	"github.com/thomasmitchell/as2as/models"
 	"github.com/thomasmitchell/as2as/pcfas"
 )
 
 func main() {
-	uaaHost := mustEnv("UAA_HOST")
+	var (
+		uaaHost         = mustEnv("UAA_HOST")
+		pcfClientID     = mustEnv("PCF_CLIENT_ID")
+		pcfClientSecret = mustEnv("PCF_CLIENT_SECRET")
+		pcfasHost       = mustEnv("PCFAS_HOST")
+		spaceGUID       = mustEnv("SPACE_GUID")
+	)
 
 	u := url.URL{
 		Scheme: "https",
@@ -22,29 +29,56 @@ func main() {
 		URL: u.String(),
 	}
 
-	clientID := mustEnv("CLIENT_ID")
-	clientSecret := mustEnv("CLIENT_SECRET")
-
-	tokenResp, err := uaaClient.ClientCredentials(clientID, clientSecret)
+	tokenResp, err := uaaClient.ClientCredentials(pcfClientID, pcfClientSecret)
 	if err != nil {
 		bailWith("Error retrieving auth token: %s", err)
 	}
 
 	token := tokenResp.AccessToken
 
-	pcfasHost := mustEnv("PCFAS_HOST")
 	pcfasClient := pcfas.NewClient(pcfasHost, token)
 	pcfasClient.TraceTo(os.Stderr)
 
-	spaceGUID := mustEnv("SPACE_GUID")
 	appsForSpace, err := pcfasClient.AppsForSpaceWithGUID(spaceGUID)
 	if err != nil {
 		bailWith("Error getting apps: %s", err)
 	}
 
+	var modelApps []models.App
+	for i := range appsForSpace {
+		rules, err := pcfasClient.RulesForAppWithGUID(appsForSpace[i].GUID)
+		if err != nil {
+			bailWith("Error getting rules for app with GUID `%s': %s",
+				appsForSpace[i].GUID,
+				err,
+			)
+		}
+
+		scheduledLimitChanges, err := pcfasClient.ScheduledLimitChangesForAppWithGUID(
+			appsForSpace[i].GUID,
+		)
+		if err != nil {
+			bailWith("Error getting scheduled limit changes for app with GUID `%s': %s",
+				appsForSpace[i].GUID,
+				err,
+			)
+		}
+		thisModelApp, err := models.ConstructApp(
+			spaceGUID,
+			appsForSpace[i],
+			rules,
+			scheduledLimitChanges,
+		)
+		if err != nil {
+			fmt.Errorf("Error transforming app data to intermediate representation: %s", err)
+		}
+
+		modelApps = append(modelApps, thisModelApp)
+	}
+
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	err = enc.Encode(appsForSpace)
+	err = enc.Encode(modelApps)
 	if err != nil {
 		bailWith("Could not encode JSON: %s", err)
 	}
