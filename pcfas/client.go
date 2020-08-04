@@ -183,8 +183,8 @@ type Rule struct {
 }
 
 type RuleThreshold struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
 }
 
 func (p *Client) RulesForAppWithGUID(guid string) ([]Rule, error) {

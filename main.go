@@ -14,7 +14,7 @@ func main() {
 		ClientSecret: dumpCom.Flag("client-secret", "The client secret to auth with").String(),
 		CFHost:       dumpCom.Flag("cf-host", "The CF API host to scrape from").String(),
 		PCFASHost:    dumpCom.Flag("pcfas-host", "The PCF Autoscaler API to talk to").String(),
-		SpaceGUID:    dumpCom.Flag("space-guid", "(temp) the guid of the space to scrape").String(),
+		BrokerGUID:   dumpCom.Flag("broker-guid", "The GUID of the autoscaler service broker").String(),
 	}
 
 	app.HelpFlag.Short('h')

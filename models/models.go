@@ -29,13 +29,13 @@ type InstanceLimits struct {
 }
 
 type Rule struct {
-	ComparisonMetric string `json:"comparision_metric"`
-	Metric           string `json:"metric"`
-	QueueName        string `json:"queue_name"`
-	RuleType         string `json:"rule_type"`
-	RuleSubType      string `json:"rule_sub_type"`
-	ThresholdMin     int    `json:"threshold_min"`
-	ThresholdMax     int    `json:"threshold_max"`
+	ComparisonMetric string  `json:"comparision_metric"`
+	Metric           string  `json:"metric"`
+	QueueName        string  `json:"queue_name"`
+	RuleType         string  `json:"rule_type"`
+	RuleSubType      string  `json:"rule_sub_type"`
+	ThresholdMin     float64 `json:"threshold_min"`
+	ThresholdMax     float64 `json:"threshold_max"`
 }
 
 type ScheduledLimitChange struct {
