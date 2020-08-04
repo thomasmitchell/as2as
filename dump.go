@@ -66,7 +66,6 @@ func (d *dumpCmd) Run() error {
 			)
 		}
 		thisModelApp, err := models.ConstructApp(
-			*d.SpaceGUID,
 			appsForSpace[i],
 			rules,
 			scheduledLimitChanges,
@@ -80,7 +79,16 @@ func (d *dumpCmd) Run() error {
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	err = enc.Encode(modelApps)
+	err = enc.Encode(
+		&models.Dump{
+			Spaces: []models.Space{
+				{
+					GUID: *d.SpaceGUID,
+					Apps: modelApps,
+				},
+			},
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("Could not encode JSON: %s", err)
 	}

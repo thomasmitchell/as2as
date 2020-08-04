@@ -6,9 +6,17 @@ import (
 	"github.com/thomasmitchell/as2as/pcfas"
 )
 
+type Dump struct {
+	Spaces []Space `json:"spaces"`
+}
+
+type Space struct {
+	GUID string `json:"guid"`
+	Apps []App  `json:"apps"`
+}
+
 type App struct {
 	GUID                  string                 `json:"guid"`
-	SpaceGUID             string                 `json:"space_guid"`
 	Enabled               bool                   `json:"enabled"`
 	InstanceLimits        InstanceLimits         `json:"instance_limits"`
 	Rules                 []Rule                 `json:"rules,omitempty"`
@@ -49,15 +57,13 @@ func (r Recurrence) ActiveOn(day time.Weekday) bool {
 }
 
 func ConstructApp(
-	spaceGUID string,
 	app pcfas.App,
 	rules []pcfas.Rule,
 	scheduledLimitChanges []pcfas.ScheduledLimitChange,
 ) (App, error) {
 	ret := App{
-		GUID:      app.GUID,
-		SpaceGUID: spaceGUID,
-		Enabled:   app.Enabled,
+		GUID:    app.GUID,
+		Enabled: app.Enabled,
 		InstanceLimits: InstanceLimits{
 			Min: app.InstanceLimits.Min,
 			Max: app.InstanceLimits.Max,
