@@ -26,7 +26,9 @@ func (d *dumpCmd) Run() error {
 		return err
 	}
 
-	spaceGUIDsToScrape, err := d.fetchSpaceGUIDsToScrape(cf)
+	errChan := make(chan error)
+
+	spaceGUIDChan, err := d.fetchSpaceGUIDsToScrape(cf, errChan)
 	if err != nil {
 		return err
 	}
@@ -43,27 +45,61 @@ func (d *dumpCmd) Run() error {
 		pcfasClient.TraceTo(os.Stderr)
 	}
 
+	outputSpaceChan := make(chan models.Space, 10)
+
+	doneChan := make(chan bool)
+	const numWorkers = 4
+
 	fmt.Fprintf(os.Stderr, "Scraping autoscaler for all known apps\n")
-	outputDump := &models.Dump{}
-	for _, spaceGUID := range spaceGUIDsToScrape {
-		appsForSpace, err := pcfasClient.AppsForSpaceWithGUID(spaceGUID)
-		if err != nil {
-			return fmt.Errorf("Error getting apps for space with GUID `%s': %s", spaceGUID, err)
-		}
-
-		var modelApps []models.App
-		for j := range appsForSpace {
-			thisModelApp, err := d.scrapeApp(appsForSpace[j], pcfasClient)
+	scrapeSpaces := func() {
+		for spaceGUID := range spaceGUIDChan {
+			appsForSpace, err := pcfasClient.AppsForSpaceWithGUID(spaceGUID)
 			if err != nil {
-				return err
+				errChan <- fmt.Errorf("Error getting apps for space with GUID `%s': %s", spaceGUID, err)
 			}
-			modelApps = append(modelApps, thisModelApp)
+
+			var modelApps []models.App
+			for j := range appsForSpace {
+				thisModelApp, err := d.scrapeApp(appsForSpace[j], pcfasClient)
+				if err != nil {
+					errChan <- err
+				}
+				modelApps = append(modelApps, thisModelApp)
+			}
+
+			outputSpaceChan <- models.Space{
+				GUID: spaceGUID,
+				Apps: modelApps,
+			}
 		}
 
-		outputDump.Spaces = append(outputDump.Spaces, models.Space{
-			GUID: spaceGUID,
-			Apps: modelApps,
-		})
+		doneChan <- true
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		go scrapeSpaces()
+	}
+
+	outputDump := &models.Dump{}
+	numWorkersDone := 0
+
+	for {
+		select {
+		case space := <-outputSpaceChan:
+			outputDump.Spaces = append(outputDump.Spaces, space)
+
+		case err := <-errChan:
+			return err
+
+		case <-doneChan:
+			fmt.Fprintf(os.Stderr, "Space scrape worker done\n")
+			numWorkersDone++
+		}
+
+		if numWorkersDone >= numWorkers {
+			fmt.Fprintf(os.Stderr, "All space scrape workers done\n")
+			break
+		}
 	}
 
 	enc := json.NewEncoder(os.Stdout)
@@ -99,7 +135,8 @@ func (d *dumpCmd) buildCFClient() (*cfclient.Client, error) {
 	return ret, nil
 }
 
-func (d *dumpCmd) fetchSpaceGUIDsToScrape(cf *cfclient.Client) ([]string, error) {
+func (d *dumpCmd) fetchSpaceGUIDsToScrape(cf *cfclient.Client, errChan chan<- error) (<-chan string, error) {
+	const numWorkers = 4
 	fmt.Fprintf(os.Stderr, "Listing services for broker with GUID `%s'\n", *d.BrokerGUID)
 	servicesQuery := url.Values{}
 	servicesQuery.Add("q", fmt.Sprintf("service_broker_guid:%s", *d.BrokerGUID))
@@ -119,25 +156,60 @@ func (d *dumpCmd) fetchSpaceGUIDsToScrape(cf *cfclient.Client) ([]string, error)
 		return nil, fmt.Errorf("Error listing spaces in CF: %s", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Querying spaces for autoscaler service instances with offering GUIDs %+v\n", targetedServiceGUIDs)
-	var ret []string
-	for i := range allSpaces {
-		serviceInstancesQuery := url.Values{}
-		serviceInstancesQuery.Add("q", fmt.Sprintf("space_guid:%s", allSpaces[i].Guid))
-		serviceInstances, err := cf.ListServiceInstancesByQuery(serviceInstancesQuery)
-		if err != nil {
-			return nil, fmt.Errorf("Error getting service instances in space with GUID `%s': %s", allSpaces[i].Guid, err)
+	filterSpacesChan := make(chan string, len(allSpaces))
+
+	go func() {
+		for _, space := range allSpaces {
+			filterSpacesChan <- space.Guid
 		}
 
-		for j := range serviceInstances {
-			if targetedServiceGUIDs.Contains(serviceInstances[j].ServiceGuid) {
-				ret = append(ret, allSpaces[i].Guid)
-				break
+		close(filterSpacesChan)
+	}()
+
+	validSpacesChan := make(chan string, len(allSpaces))
+	doneChan := make(chan bool)
+
+	fmt.Fprintf(os.Stderr, "Querying spaces for autoscaler service instances with offering GUIDs %+v\n", targetedServiceGUIDs)
+
+	filterSpaces := func() {
+		for spaceGuid := range filterSpacesChan {
+			serviceInstancesQuery := url.Values{}
+			serviceInstancesQuery.Add("q", fmt.Sprintf("space_guid:%s", spaceGuid))
+			serviceInstances, err := cf.ListServiceInstancesByQuery(serviceInstancesQuery)
+			if err != nil {
+				errChan <- fmt.Errorf("Error getting service instances in space with GUID `%s': %s", spaceGuid, err)
+				return
+			}
+
+			for j := range serviceInstances {
+				if targetedServiceGUIDs.Contains(serviceInstances[j].ServiceGuid) {
+					validSpacesChan <- spaceGuid
+					break
+				}
 			}
 		}
+
+		doneChan <- true
 	}
 
-	return ret, nil
+	for i := 0; i < numWorkers; i++ {
+		go filterSpaces()
+	}
+
+	go func() {
+		numWorkersDone := 0
+		for <-doneChan {
+			fmt.Fprintf(os.Stderr, "Space filter worker done\n")
+			numWorkersDone++
+			if numWorkersDone >= numWorkers {
+				fmt.Fprintf(os.Stderr, "All space filter workers done\n")
+				close(validSpacesChan)
+				return
+			}
+		}
+	}()
+
+	return validSpacesChan, nil
 }
 
 func (d *dumpCmd) scrapeApp(app pcfas.App, pcfasClient *pcfas.Client) (models.App, error) {
