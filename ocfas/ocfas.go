@@ -1,8 +1,8 @@
 package ocfas
 
 type Policy struct {
-	InstanceMinCount string        `json:"instance_min_count"`
-	InstanceMaxCount string        `json:"instance_max_count"`
+	InstanceMinCount int64         `json:"instance_min_count"`
+	InstanceMaxCount int64         `json:"instance_max_count"`
 	ScalingRules     []ScalingRule `json:"scaling_rules,omitempty"`
 	Schedules        []Schedule    `json:"schedules,omitempty"`
 }
@@ -17,15 +17,15 @@ const (
 )
 
 const (
-	OperatorLessThan             = "<"
-	OperatorLessThanOrEqualTo    = "<="
-	OperatorGreaterThan          = ">"
-	OperatorGreaterThanOrEqualTo = ">="
+	OperatorLessThan             string = "<"
+	OperatorLessThanOrEqualTo    string = "<="
+	OperatorGreaterThan          string = ">"
+	OperatorGreaterThanOrEqualTo string = ">="
 )
 
 const (
-	AdjustmentDown = "-1"
-	AdjustmentUp   = "+1"
+	AdjustmentDown string = "-1"
+	AdjustmentUp   string = "+1"
 )
 
 type ScalingRule struct {

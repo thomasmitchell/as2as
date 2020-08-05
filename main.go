@@ -17,6 +17,11 @@ func main() {
 		BrokerGUID:   dumpCom.Flag("broker-guid", "The GUID of the autoscaler service broker").String(),
 	}
 
+	convertCom := app.Command("convert", "Display OCF autoscaler converted rules")
+	cmdIndex["convert"] = &convertCmd{
+		InputFile: convertCom.Flag("input-file", "The file to read the exported data from").Short('f').Required().File(),
+	}
+
 	app.HelpFlag.Short('h')
 	commandName := kingpin.MustParse(app.Parse(os.Args[1:]))
 	cmd, found := cmdIndex[commandName]

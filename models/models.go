@@ -2,6 +2,8 @@ package models
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/thomasmitchell/as2as/ocfas"
@@ -26,8 +28,8 @@ type App struct {
 }
 
 type InstanceLimits struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+	Min int64 `json:"min"`
+	Max int64 `json:"max"`
 }
 
 type Rule struct {
@@ -115,7 +117,71 @@ func ConstructApp(
 	return ret, nil
 }
 
-func AppToOCFPolicy(App) (ocfas.Policy, error) {
-	ret := ocfas.Policy{}
-	return ret, fmt.Errorf("Not yet implemented")
+//Returns nil if App is not enabled
+func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
+	if !a.Enabled {
+		return nil, nil
+	}
+
+	ret := &ocfas.Policy{
+		InstanceMinCount: a.InstanceLimits.Min,
+		InstanceMaxCount: a.InstanceLimits.Max,
+	}
+
+	for i := range a.Rules {
+		var err error
+		ret.ScalingRules, err = a.Rules[i].ToOCFScalingRules()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	//TODO: Parse schedules
+
+	return ret, nil
+}
+
+var illegalMetricNameRegex = regexp.MustCompile("[^[:alnum:]_]")
+var ruleConversionMap = map[string]string{
+	RuleTypeCPUUtil:        ocfas.MetricTypeCPUUtil,
+	RuleTypeMemoryUtil:     ocfas.MetricTypeMemoryUtil,
+	RuleTypeHTTPThroughput: ocfas.MetricTypeThroughput,
+	RuleTypeHTTPLatency:    ocfas.MetricTypeResponseTime,
+}
+
+func (r *Rule) ToOCFScalingRules() ([]ocfas.ScalingRule, error) {
+	var ocfMetricType string
+	//RabbitMQ is a special case because it would be a custom metric in OCF
+	// However, at this time, RabbitMQ is not exposing queue depth as a
+	// metric without https://github.com/starkandwayne/rabbitmq-metrics-emitter-release
+	if r.RuleType == RuleTypeRabbitMQDepth {
+		//Legal queue names are alphanumeric and underscores. However, queue names may have any UTF8 character. Gross.
+		convertedQueueName := strings.ReplaceAll(r.QueueName, "-", "_")
+		if illegalMetricNameRegex.MatchString(convertedQueueName) {
+			return nil, fmt.Errorf("Illegal metric name generated from RabbitMQ queue name")
+		}
+
+		ocfMetricType = fmt.Sprintf("%s_messages_ready", convertedQueueName)
+	} else {
+		var knownType bool
+		ocfMetricType, knownType = ruleConversionMap[r.RuleType]
+		if !knownType {
+			return nil, fmt.Errorf("Unknown Rule Type `%s'", r.RuleType)
+		}
+	}
+
+	return []ocfas.ScalingRule{
+		{
+			MetricType: ocfMetricType,
+			Operator:   ocfas.OperatorLessThan,
+			Threshold:  int64(r.ThresholdMin), //truncate fractional component
+			Adjustment: ocfas.AdjustmentDown,
+		},
+		{
+			MetricType: ocfMetricType,
+			Operator:   ocfas.OperatorGreaterThan,
+			Threshold:  int64(r.ThresholdMax), //truncate fractional component
+			Adjustment: ocfas.AdjustmentUp,
+		},
+	}, nil
 }

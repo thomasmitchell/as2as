@@ -127,8 +127,8 @@ type App struct {
 }
 
 type InstanceLimits struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+	Min int64 `json:"min"`
+	Max int64 `json:"max"`
 }
 
 func (p *Client) AppsForSpaceWithGUID(guid string) ([]App, error) {

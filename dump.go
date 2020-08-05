@@ -104,6 +104,7 @@ func (d *dumpCmd) Run() error {
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
 	err = enc.Encode(&outputDump)
 	if err != nil {
 		return fmt.Errorf("Could not encode JSON: %s", err)
