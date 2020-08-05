@@ -12,7 +12,7 @@ type Dump struct {
 
 type Space struct {
 	GUID string `json:"guid"`
-	Apps []App  `json:"apps"`
+	Apps []App  `json:"apps,omitempty"`
 }
 
 type App struct {
