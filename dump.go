@@ -48,7 +48,7 @@ func (d *dumpCmd) Run() error {
 	outputSpaceChan := make(chan models.Space, 10)
 
 	doneChan := make(chan bool)
-	const numWorkers = 4
+	const numWorkers = 8
 
 	fmt.Fprintf(os.Stderr, "Scraping autoscaler for all known apps\n")
 	scrapeSpaces := func() {
