@@ -29,7 +29,7 @@ type InstanceLimits struct {
 }
 
 type Rule struct {
-	ComparisonMetric string  `json:"comparision_metric"`
+	ComparisonMetric string  `json:"comparison_metric"`
 	Metric           string  `json:"metric"`
 	QueueName        string  `json:"queue_name"`
 	RuleType         string  `json:"rule_type"`
