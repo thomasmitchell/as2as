@@ -1,8 +1,10 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/thomasmitchell/as2as/ocfas"
 	"github.com/thomasmitchell/as2as/pcfas"
 )
 
@@ -29,14 +31,22 @@ type InstanceLimits struct {
 }
 
 type Rule struct {
-	ComparisonMetric string  `json:"comparison_metric"`
-	Metric           string  `json:"metric"`
-	QueueName        string  `json:"queue_name"`
+	ComparisonMetric string  `json:"comparison_metric,omitempty"`
+	Metric           string  `json:"metric,omitempty"`
+	QueueName        string  `json:"queue_name,omitempty"`
 	RuleType         string  `json:"rule_type"`
-	RuleSubType      string  `json:"rule_sub_type"`
+	RuleSubType      string  `json:"rule_sub_type,omitempty"`
 	ThresholdMin     float64 `json:"threshold_min"`
 	ThresholdMax     float64 `json:"threshold_max"`
 }
+
+const (
+	RuleTypeCPUUtil        = "cpu"
+	RuleTypeMemoryUtil     = "memory"
+	RuleTypeHTTPThroughput = "http_throughput"
+	RuleTypeHTTPLatency    = "http_latency"
+	RuleTypeRabbitMQDepth  = "rabbitmq"
+)
 
 type ScheduledLimitChange struct {
 	Enabled        bool           `json:"enabled"`
@@ -103,4 +113,9 @@ func ConstructApp(
 	}
 
 	return ret, nil
+}
+
+func AppToOCFPolicy(App) (ocfas.Policy, error) {
+	ret := ocfas.Policy{}
+	return ret, fmt.Errorf("Not yet implemented")
 }
