@@ -4,7 +4,7 @@ type Policy struct {
 	InstanceMinCount int64         `json:"instance_min_count"`
 	InstanceMaxCount int64         `json:"instance_max_count"`
 	ScalingRules     []ScalingRule `json:"scaling_rules,omitempty"`
-	Schedules        []Schedule    `json:"schedules,omitempty"`
+	Schedules        Schedules     `json:"schedules,omitempty"`
 }
 
 const (
@@ -41,19 +41,20 @@ const (
 	TimezoneUTC = "Etc/UTC"
 )
 
-type Schedule struct {
+type Schedules struct {
 	Timezone          string              `json:"timezone"`
 	RecurringSchedule []RecurringSchedule `json:"recurring_schedule,omitempty"`
 	SpecificDate      []SpecificDate      `json:"specific_date,omitempty"`
 }
 
 type RecurringSchedule struct {
-	StartTime               string     `json:"start_time"`
-	EndTime                 string     `json:"end_time"`
-	DaysOfWeek              DaysOfWeek `json:"days_of_week"`
-	InstanceMinCount        int64      `json:"instance_min_count"`
-	InstanceMaxCount        int64      `json:"instance_max_count"`
-	InitialMinInstanceCount int64      `json:"initial_min_instance_count,omitempty"`
+	StartTime        string     `json:"start_time"`
+	EndTime          string     `json:"end_time"`
+	DaysOfWeek       DaysOfWeek `json:"days_of_week"`
+	InstanceMinCount int64      `json:"instance_min_count"`
+	InstanceMaxCount int64      `json:"instance_max_count"`
+	//TODO: Make into pointer?
+	InitialMinInstanceCount int64 `json:"initial_min_instance_count,omitempty"`
 }
 
 type DaysOfWeek []int8

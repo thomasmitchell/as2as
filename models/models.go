@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,11 +21,11 @@ type Space struct {
 }
 
 type App struct {
-	GUID                  string                 `json:"guid"`
-	Enabled               bool                   `json:"enabled"`
-	InstanceLimits        InstanceLimits         `json:"instance_limits"`
-	Rules                 []Rule                 `json:"rules,omitempty"`
-	ScheduledLimitChanges []ScheduledLimitChange `json:"scheduled_limit_changes,omitempty"`
+	GUID                  string                `json:"guid"`
+	Enabled               bool                  `json:"enabled"`
+	InstanceLimits        InstanceLimits        `json:"instance_limits"`
+	Rules                 []Rule                `json:"rules,omitempty"`
+	ScheduledLimitChanges ScheduledLimitChanges `json:"scheduled_limit_changes,omitempty"`
 }
 
 type InstanceLimits struct {
@@ -57,9 +58,39 @@ type ScheduledLimitChange struct {
 	Recurrence     Recurrence     `json:"recurrence"`
 }
 
+type ScheduledLimitChanges []ScheduledLimitChange
+
 type TimeOfDay struct {
 	Hour   uint8 `json:"hour"`
 	Minute uint8 `json:"minute"`
+}
+
+func (t TimeOfDay) String() string {
+	return fmt.Sprintf("%02d:%02d", t.Hour, t.Minute)
+}
+
+func (t TimeOfDay) LessThan(t2 TimeOfDay) bool {
+	if t.Hour != t2.Hour {
+		return t.Hour < t2.Hour
+	}
+
+	return t.Minute <= t2.Minute
+}
+
+func (t TimeOfDay) SubOneMinute() TimeOfDay {
+	if t.Minute == 0 {
+		t.Minute = 59
+
+		if t.Hour == 0 {
+			t.Hour = 23
+		} else {
+			t.Hour--
+		}
+	} else {
+		t.Minute--
+	}
+
+	return t
 }
 
 type Recurrence uint8
@@ -136,7 +167,10 @@ func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
 		}
 	}
 
-	//TODO: Parse schedules
+	if len(a.ScheduledLimitChanges) > 0 {
+		ret.Schedules.Timezone = "Etc/UTC"
+		ret.Schedules.RecurringSchedule = a.ScheduledLimitChanges.ToOCFRecurringSchedules()
+	}
 
 	return ret, nil
 }
@@ -184,4 +218,206 @@ func (r *Rule) ToOCFScalingRules() ([]ocfas.ScalingRule, error) {
 			Adjustment: ocfas.AdjustmentUp,
 		},
 	}, nil
+}
+
+//Returns nil if Schedule not enabled
+func (s ScheduledLimitChanges) ToOCFRecurringSchedules() []ocfas.RecurringSchedule {
+	splitScheds := daySchedules{}
+	for _, sched := range s {
+		if !sched.Enabled {
+			continue
+		}
+
+		splitScheds = append(splitScheds, sched.toDaySchedules()...)
+	}
+
+	if len(splitScheds) == 0 {
+		return nil
+	}
+
+	if len(splitScheds) == 1 {
+		return []ocfas.RecurringSchedule{
+			{
+				StartTime:               TimeOfDay{0, 0}.String(),
+				EndTime:                 TimeOfDay{23, 59}.String(),
+				DaysOfWeek:              ocfas.DaysOfWeek{1, 2, 3, 4, 5, 6, 7},
+				InstanceMinCount:        splitScheds[0].InstanceLimits.Min,
+				InstanceMaxCount:        splitScheds[0].InstanceLimits.Max,
+				InitialMinInstanceCount: (splitScheds[0].InstanceLimits.Min + splitScheds[0].InstanceLimits.Max) / 2,
+			},
+		}
+	}
+
+	//This turns the starting point based schedules of PCF to the OCF representations of the periods of
+	// time between the starting points.
+	verboseRet := splitScheds.ToOCF()
+
+	return condenseOCFRecurringSchedules(verboseRet)
+}
+
+//Monday is 1, Tuesday is 2....
+func weekdayToOCF(day time.Weekday) int8 {
+	return int8((day+6)%7) + 1
+}
+
+type daySchedule struct {
+	Weekday        time.Weekday
+	StartTime      TimeOfDay
+	InstanceLimits InstanceLimits
+}
+
+type daySchedules []daySchedule
+
+//First thing on Sunday to last thing on Saturday
+func (d daySchedules) Sort() {
+	sort.Slice(d, func(i, j int) bool {
+		if d[i].Weekday != d[j].Weekday {
+			return d[i].Weekday < d[j].Weekday
+		}
+
+		return d[i].StartTime.LessThan(d[j].StartTime)
+	})
+}
+
+func (d daySchedules) ToOCF() []ocfas.RecurringSchedule {
+	d.Sort()
+
+	periods := make([]ocfas.RecurringSchedule, 0, len(d)-1)
+	var toAppend *ocfas.RecurringSchedule
+
+	for idx, sched := range d {
+		if toAppend != nil {
+			split := false
+			for i := d[idx-1].Weekday + 1; i < sched.Weekday; i++ {
+				//Fill in days which did not have schedule starting points
+				periods = append(periods, ocfas.RecurringSchedule{
+					StartTime:               TimeOfDay{0, 0}.String(),
+					EndTime:                 TimeOfDay{23, 59}.String(),
+					DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(i)},
+					InstanceMinCount:        toAppend.InstanceMinCount,
+					InstanceMaxCount:        toAppend.InstanceMaxCount,
+					InitialMinInstanceCount: toAppend.InitialMinInstanceCount,
+				})
+				split = true
+			}
+
+			endTime := sched.StartTime.SubOneMinute()
+
+			if split || endTime.LessThan(d[idx-1].StartTime) {
+				//Need to split into two rules if would cross day boundary
+				toAppend.EndTime = TimeOfDay{23, 59}.String()
+				periods = append(periods, *toAppend)
+
+				toAppend = &ocfas.RecurringSchedule{
+					StartTime:               TimeOfDay{0, 0}.String(),
+					DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(sched.Weekday)},
+					InstanceMinCount:        toAppend.InstanceMinCount,
+					InstanceMaxCount:        toAppend.InstanceMaxCount,
+					InitialMinInstanceCount: toAppend.InitialMinInstanceCount,
+				}
+			}
+
+			toAppend.EndTime = endTime.String()
+			periods = append(periods, *toAppend)
+		}
+
+		toAppend = &ocfas.RecurringSchedule{
+			StartTime:               sched.StartTime.String(),
+			DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(sched.Weekday)},
+			InstanceMinCount:        sched.InstanceLimits.Min,
+			InstanceMaxCount:        sched.InstanceLimits.Max,
+			InitialMinInstanceCount: (sched.InstanceLimits.Min + sched.InstanceLimits.Max) / 2,
+		}
+	}
+
+	split := false
+	for i := d[len(d)-1].Weekday + 1; i != d[0].Weekday; i = (i + 1) % (time.Saturday + 1) {
+		periods = append(periods, ocfas.RecurringSchedule{
+			StartTime:               TimeOfDay{0, 0}.String(),
+			EndTime:                 TimeOfDay{23, 59}.String(),
+			DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(i)},
+			InstanceMinCount:        toAppend.InstanceMinCount,
+			InstanceMaxCount:        toAppend.InstanceMaxCount,
+			InitialMinInstanceCount: toAppend.InitialMinInstanceCount,
+		})
+
+		split = true
+	}
+
+	endTime := d[0].StartTime.SubOneMinute()
+
+	if split || endTime.LessThan(d[len(d)-1].StartTime) {
+		//Need to split into two rules if would cross day boundary
+		toAppend.EndTime = TimeOfDay{23, 59}.String()
+		periods = append(periods, *toAppend)
+
+		toAppend = &ocfas.RecurringSchedule{
+			StartTime:               TimeOfDay{0, 0}.String(),
+			DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(d[0].Weekday)},
+			InstanceMinCount:        toAppend.InstanceMinCount,
+			InstanceMaxCount:        toAppend.InstanceMaxCount,
+			InitialMinInstanceCount: toAppend.InitialMinInstanceCount,
+		}
+	}
+
+	toAppend.EndTime = endTime.String()
+	periods = append(periods, *toAppend)
+	return periods
+}
+
+var daysOfWeek = [7]time.Weekday{
+	time.Sunday,
+	time.Monday,
+	time.Tuesday,
+	time.Wednesday,
+	time.Thursday,
+	time.Friday,
+	time.Saturday,
+}
+
+func (s *ScheduledLimitChange) toDaySchedules() daySchedules {
+	ret := daySchedules{}
+	for _, weekday := range daysOfWeek {
+		if s.Recurrence.ActiveOn(weekday) {
+			ret = append(ret, daySchedule{
+				Weekday:        weekday,
+				StartTime:      s.StartTime,
+				InstanceLimits: s.InstanceLimits,
+			})
+		}
+	}
+
+	return ret
+}
+
+func condenseOCFRecurringSchedules(in []ocfas.RecurringSchedule) []ocfas.RecurringSchedule {
+	ret := []ocfas.RecurringSchedule{}
+
+	inClone := make([]ocfas.RecurringSchedule, len(in))
+	for i := range in {
+		inClone[i] = in[i]
+	}
+
+	for i := 0; i < len(inClone); i++ {
+		toAppend := inClone[i]
+
+		for j := i + 1; j < len(inClone); j++ {
+			if inClone[j].StartTime == toAppend.StartTime &&
+				inClone[j].EndTime == toAppend.EndTime &&
+				inClone[j].InstanceMinCount == toAppend.InstanceMinCount &&
+				inClone[j].InstanceMaxCount == toAppend.InstanceMaxCount {
+
+				toAppend.DaysOfWeek = append(toAppend.DaysOfWeek, inClone[j].DaysOfWeek...)
+
+				inClone[j], inClone[len(inClone)-1] = inClone[len(inClone)-1], inClone[j]
+				inClone = inClone[:len(inClone)-1]
+				j--
+			}
+		}
+
+		sort.Slice(toAppend.DaysOfWeek, func(i, j int) bool { return toAppend.DaysOfWeek[i] < toAppend.DaysOfWeek[j] })
+		ret = append(ret, toAppend)
+	}
+
+	return ret
 }
