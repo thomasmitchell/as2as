@@ -52,8 +52,8 @@ func (d *dumpCmd) Run() error {
 	const numWorkers = 8
 
 	fmt.Fprintf(os.Stderr, "Scraping autoscaler for all known apps\n")
-	wait := sync.WaitGroup{}
-	wait.Add(numWorkers)
+	scrapeWait := sync.WaitGroup{}
+	scrapeWait.Add(numWorkers)
 
 	scrapeSpaces := func() {
 		for spaceGUID := range spaceGUIDChan {
@@ -77,37 +77,33 @@ func (d *dumpCmd) Run() error {
 			}
 		}
 
-		wait.Done()
+		scrapeWait.Done()
 	}
-
 	for i := 0; i < numWorkers; i++ {
 		go scrapeSpaces()
 	}
-
 	go func() {
-		wait.Wait()
+		scrapeWait.Wait()
 		fmt.Fprintf(os.Stderr, "All space scrape workers done\n")
 		close(outputSpaceChan)
-		doneChan <- true
 	}()
 
 	outputDump := &models.Dump{}
 
-ForLoop:
-	for {
-		select {
-		case space := <-outputSpaceChan:
+	go func() {
+		for space := range outputSpaceChan {
 			outputDump.Spaces = append(outputDump.Spaces, space)
-
-		case err := <-errChan:
-			return err
-
-		case <-doneChan:
-			for space := range outputSpaceChan {
-				outputDump.Spaces = append(outputDump.Spaces, space)
-			}
-			break ForLoop
 		}
+
+		fmt.Fprintf(os.Stderr, "Output builder done\n")
+		doneChan <- true
+	}()
+
+	select {
+	case err := <-errChan:
+		return err
+
+	case <-doneChan:
 	}
 
 	enc := json.NewEncoder(os.Stdout)
