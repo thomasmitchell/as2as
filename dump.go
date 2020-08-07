@@ -98,6 +98,9 @@ func (d *dumpCmd) Run() error {
 
 		if numWorkersDone >= numWorkers {
 			fmt.Fprintf(os.Stderr, "All space scrape workers done\n")
+			for space := range outputSpaceChan {
+				outputDump.Spaces = append(outputDump.Spaces, space)
+			}
 			break
 		}
 	}
