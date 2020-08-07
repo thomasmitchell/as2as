@@ -60,10 +60,20 @@ func (d *dumpCmd) Run() error {
 			appsForSpace, err := pcfasClient.AppsForSpaceWithGUID(spaceGUID)
 			if err != nil {
 				errChan <- fmt.Errorf("Error getting apps for space with GUID `%s': %s", spaceGUID, err)
+				return
 			}
 
 			var modelApps []models.App
 			for j := range appsForSpace {
+				_, err := cf.GetAppByGuid(appsForSpace[j].GUID)
+				if err != nil {
+					if cfclient.IsAppNotFoundError(err) {
+						continue
+					}
+
+					errChan <- fmt.Errorf("Error querying CF for existence of app with GUID `%s': %s", appsForSpace[j].GUID, err)
+					return
+				}
 				thisModelApp, err := d.scrapeApp(appsForSpace[j], pcfasClient)
 				if err != nil {
 					errChan <- err

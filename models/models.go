@@ -166,10 +166,12 @@ func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
 			return nil, err
 		}
 	}
-
-	if len(a.ScheduledLimitChanges) > 0 {
-		ret.Schedules.Timezone = "Etc/UTC"
-		ret.Schedules.RecurringSchedule = a.ScheduledLimitChanges.ToOCFRecurringSchedules()
+	recurringScheds := a.ScheduledLimitChanges.ToOCFRecurringSchedules()
+	if len(recurringScheds) > 0 {
+		ret.Schedules = &ocfas.Schedules{
+			Timezone:          "Etc/UTC",
+			RecurringSchedule: recurringScheds,
+		}
 	}
 
 	return ret, nil

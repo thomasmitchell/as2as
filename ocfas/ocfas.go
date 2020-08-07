@@ -15,7 +15,7 @@ type Policy struct {
 	InstanceMinCount int64         `json:"instance_min_count"`
 	InstanceMaxCount int64         `json:"instance_max_count"`
 	ScalingRules     []ScalingRule `json:"scaling_rules,omitempty"`
-	Schedules        Schedules     `json:"schedules,omitempty"`
+	Schedules        *Schedules    `json:"schedules,omitempty"`
 }
 
 const (
@@ -105,8 +105,9 @@ func (c *Client) newRequest(method, path string, query map[string]string, body i
 
 	var bodyReader io.ReadWriter
 	if body != nil {
-		body = bytes.Buffer{}
+		bodyReader = &bytes.Buffer{}
 		jEncoder := json.NewEncoder(bodyReader)
+		jEncoder.SetEscapeHTML(false)
 		err := jEncoder.Encode(body)
 		if err != nil {
 			return nil, err
@@ -184,8 +185,11 @@ func (c *Client) doRequest(request *http.Request, out interface{}) error {
 }
 
 func (c *Client) CreatePolicyForAppWithGUID(guid string, policy *Policy) error {
+	if policy == nil {
+		return nil
+	}
 	req, err := c.newRequest(
-		"POST",
+		"PUT",
 		"/v1/apps/"+guid+"/policy",
 		nil,
 		policy,

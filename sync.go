@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/cloudfoundry-community/go-cfclient"
@@ -115,7 +116,10 @@ func (s *syncCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("Error retrieving auth token: %s", err)
 	}
-	as := ocfas.NewClient(*s.OCFASHost, token)
+	as := ocfas.NewClient(*s.OCFASHost, strings.TrimPrefix(token, "bearer "))
+	if globalTrace != nil && *globalTrace {
+		as.TraceTo(os.Stderr)
+	}
 
 	fmt.Fprintf(os.Stderr, "Setting policies on apps\n")
 	for i := 0; i < numWorkers; i++ {
