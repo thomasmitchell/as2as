@@ -423,3 +423,17 @@ func condenseOCFRecurringSchedules(in []ocfas.RecurringSchedule) []ocfas.Recurri
 
 	return ret
 }
+
+type Converted struct {
+	Spaces []ConvertedSpace `json:"spaces"`
+}
+
+type ConvertedSpace struct {
+	GUID string                 `json:"guid"`
+	Apps []ConvertedPolicyToApp `json:"apps,omitempty"`
+}
+
+type ConvertedPolicyToApp struct {
+	GUID   string        `json:"guid"`
+	Policy *ocfas.Policy `json:"policy,omitempty"`
+}

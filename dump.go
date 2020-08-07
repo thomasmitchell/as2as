@@ -21,7 +21,7 @@ type dumpCmd struct {
 }
 
 func (d *dumpCmd) Run() error {
-	cf, err := d.buildCFClient()
+	cf, err := buildCFClient(*d.CFHost, *d.ClientID, *d.ClientSecret)
 	if err != nil {
 		return err
 	}
@@ -111,29 +111,6 @@ func (d *dumpCmd) Run() error {
 	}
 
 	return nil
-}
-
-func (d *dumpCmd) buildCFClient() (*cfclient.Client, error) {
-	u := url.URL{
-		Scheme: "https",
-		Host:   *d.CFHost,
-	}
-
-	cfClientConfig := &cfclient.Config{
-		ApiAddress:   u.String(),
-		ClientID:     *d.ClientID,
-		ClientSecret: *d.ClientSecret,
-		UserAgent:    "Go-CF-client/1.1",
-	}
-
-	fmt.Fprintf(os.Stderr, "Authing to CF\n")
-
-	ret, err := cfclient.NewClient(cfClientConfig)
-	if err != nil {
-		return nil, fmt.Errorf("Error initializing CF client: %s")
-	}
-
-	return ret, nil
 }
 
 func (d *dumpCmd) fetchSpaceGUIDsToScrape(cf *cfclient.Client, errChan chan<- error) (<-chan string, error) {

@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/thomasmitchell/as2as/models"
-	"github.com/thomasmitchell/as2as/ocfas"
 )
 
 type convertCmd struct {
@@ -22,24 +21,15 @@ func (c *convertCmd) Run() error {
 		return fmt.Errorf("Error decoding file input")
 	}
 
-	type PolicyToApp struct {
-		GUID   string        `json:"guid"`
-		Policy *ocfas.Policy `json:"policy,omitempty"`
+	err = (*c.InputFile).Close()
+	if err != nil {
+		return fmt.Errorf("Error closing input file")
 	}
 
-	type Space struct {
-		GUID string        `json:"guid"`
-		Apps []PolicyToApp `json:"apps,omitempty"`
-	}
-
-	type SpaceList struct {
-		Spaces []Space `json:"spaces"`
-	}
-
-	output := SpaceList{}
+	output := models.Converted{}
 
 	for _, space := range dumpModel.Spaces {
-		appList := []PolicyToApp{}
+		appList := []models.ConvertedPolicyToApp{}
 
 		for _, app := range space.Apps {
 			policy, err := app.ToOCFPolicy()
@@ -47,14 +37,14 @@ func (c *convertCmd) Run() error {
 				return fmt.Errorf("Error constructing policy for app with GUID `%s' in space with GUID `%s': %s", app.GUID, space.GUID, err)
 			}
 
-			appList = append(appList, PolicyToApp{
+			appList = append(appList, models.ConvertedPolicyToApp{
 				GUID:   app.GUID,
 				Policy: policy,
 			})
 		}
 
 		output.Spaces = append(output.Spaces,
-			Space{
+			models.ConvertedSpace{
 				GUID: space.GUID,
 				Apps: appList,
 			},
