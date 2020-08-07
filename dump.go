@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/cloudfoundry-community/go-cfclient"
 	"github.com/thomasmitchell/as2as/models"
@@ -51,6 +52,9 @@ func (d *dumpCmd) Run() error {
 	const numWorkers = 8
 
 	fmt.Fprintf(os.Stderr, "Scraping autoscaler for all known apps\n")
+	wait := sync.WaitGroup{}
+	wait.Add(numWorkers)
+
 	scrapeSpaces := func() {
 		for spaceGUID := range spaceGUIDChan {
 			appsForSpace, err := pcfasClient.AppsForSpaceWithGUID(spaceGUID)
@@ -73,16 +77,23 @@ func (d *dumpCmd) Run() error {
 			}
 		}
 
-		doneChan <- true
+		wait.Done()
 	}
 
 	for i := 0; i < numWorkers; i++ {
 		go scrapeSpaces()
 	}
 
-	outputDump := &models.Dump{}
-	numWorkersDone := 0
+	go func() {
+		wait.Wait()
+		fmt.Fprintf(os.Stderr, "All space scrape workers done\n")
+		close(outputSpaceChan)
+		doneChan <- true
+	}()
 
+	outputDump := &models.Dump{}
+
+ForLoop:
 	for {
 		select {
 		case space := <-outputSpaceChan:
@@ -92,16 +103,10 @@ func (d *dumpCmd) Run() error {
 			return err
 
 		case <-doneChan:
-			fmt.Fprintf(os.Stderr, "Space scrape worker done\n")
-			numWorkersDone++
-		}
-
-		if numWorkersDone >= numWorkers {
-			fmt.Fprintf(os.Stderr, "All space scrape workers done\n")
 			for space := range outputSpaceChan {
 				outputDump.Spaces = append(outputDump.Spaces, space)
 			}
-			break
+			break ForLoop
 		}
 	}
 
@@ -118,76 +123,65 @@ func (d *dumpCmd) Run() error {
 
 func (d *dumpCmd) fetchSpaceGUIDsToScrape(cf *cfclient.Client, errChan chan<- error) (<-chan string, error) {
 	const numWorkers = 4
-	fmt.Fprintf(os.Stderr, "Listing services for broker with GUID `%s'\n", *d.BrokerGUID)
+	fmt.Fprintf(os.Stderr, "Listing plans for broker with GUID `%s'\n", *d.BrokerGUID)
 	servicesQuery := url.Values{}
 	servicesQuery.Add("q", fmt.Sprintf("service_broker_guid:%s", *d.BrokerGUID))
-	servicesForBroker, err := cf.ListServicesByQuery(servicesQuery)
+	plansForBroker, err := cf.ListServicePlansByQuery(servicesQuery)
 	if err != nil {
-		return nil, fmt.Errorf("Error list services for broker with GUID `%s': %s", *d.BrokerGUID, err)
+		return nil, fmt.Errorf("Error listing service plans for broker with GUID `%s': %s", *d.BrokerGUID, err)
 	}
 
-	var targetedServiceGUIDs StringList
-	for i := range servicesForBroker {
-		targetedServiceGUIDs = append(targetedServiceGUIDs, servicesForBroker[i].Guid)
-	}
-
-	fmt.Fprintf(os.Stderr, "Listing spaces in CF\n")
-	allSpaces, err := cf.ListSpaces()
-	if err != nil {
-		return nil, fmt.Errorf("Error listing spaces in CF: %s", err)
-	}
-
-	filterSpacesChan := make(chan string, len(allSpaces))
-
-	go func() {
-		for _, space := range allSpaces {
-			filterSpacesChan <- space.Guid
+	var allServiceInstances []cfclient.ServiceInstance
+	for _, plan := range plansForBroker {
+		serviceInstancesQuery := url.Values{}
+		serviceInstancesQuery.Add("q", "service_plan_guid:"+plan.Guid)
+		serviceInstances, err := cf.ListServiceInstancesByQuery(serviceInstancesQuery)
+		if err != nil {
+			return nil, fmt.Errorf("Error listing service instances for plan `%s': %s", plan.Guid, err)
 		}
 
-		close(filterSpacesChan)
+		allServiceInstances = append(allServiceInstances, serviceInstances...)
+	}
+
+	validSpacesChan := make(chan string, len(allServiceInstances))
+	serviceInstanceChan := make(chan cfclient.ServiceInstance, len(allServiceInstances))
+
+	go func() {
+		for _, serviceInstance := range allServiceInstances {
+			serviceInstanceChan <- serviceInstance
+		}
+
+		close(serviceInstanceChan)
 	}()
 
-	validSpacesChan := make(chan string, len(allSpaces))
-	doneChan := make(chan bool)
+	wait := sync.WaitGroup{}
+	wait.Add(numWorkers)
 
-	fmt.Fprintf(os.Stderr, "Querying spaces for autoscaler service instances with offering GUIDs %+v\n", targetedServiceGUIDs)
+	fmt.Fprintf(os.Stderr, "Querying service bindings\n")
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for serviceInstance := range serviceInstanceChan {
+				bindingsQuery := url.Values{}
+				bindingsQuery.Add("q", "service_instance_guid:"+serviceInstance.Guid)
+				bindings, err := cf.ListServiceBindingsByQuery(bindingsQuery)
+				if err != nil {
+					errChan <- fmt.Errorf("Error checking service bindings for service instance with GUID `%s': %s", serviceInstance.Guid, err)
+					return
+				}
 
-	filterSpaces := func() {
-		for spaceGuid := range filterSpacesChan {
-			serviceInstancesQuery := url.Values{}
-			serviceInstancesQuery.Add("q", fmt.Sprintf("space_guid:%s", spaceGuid))
-			serviceInstances, err := cf.ListServiceInstancesByQuery(serviceInstancesQuery)
-			if err != nil {
-				errChan <- fmt.Errorf("Error getting service instances in space with GUID `%s': %s", spaceGuid, err)
-				return
-			}
-
-			for j := range serviceInstances {
-				if targetedServiceGUIDs.Contains(serviceInstances[j].ServiceGuid) {
-					validSpacesChan <- spaceGuid
-					break
+				if len(bindings) > 0 {
+					validSpacesChan <- serviceInstance.SpaceGuid
 				}
 			}
-		}
 
-		doneChan <- true
-	}
-
-	for i := 0; i < numWorkers; i++ {
-		go filterSpaces()
+			wait.Done()
+		}()
 	}
 
 	go func() {
-		numWorkersDone := 0
-		for <-doneChan {
-			fmt.Fprintf(os.Stderr, "Space filter worker done\n")
-			numWorkersDone++
-			if numWorkersDone >= numWorkers {
-				fmt.Fprintf(os.Stderr, "All space filter workers done\n")
-				close(validSpacesChan)
-				return
-			}
-		}
+		wait.Wait()
+		fmt.Fprintf(os.Stderr, "Done querying service bindings\n")
+		close(validSpacesChan)
 	}()
 
 	return validSpacesChan, nil
