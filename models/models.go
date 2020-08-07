@@ -236,6 +236,7 @@ func (s ScheduledLimitChanges) ToOCFRecurringSchedules() []ocfas.RecurringSchedu
 	}
 
 	if len(splitScheds) == 1 {
+		initial := (splitScheds[0].InstanceLimits.Min + splitScheds[0].InstanceLimits.Max) / 2
 		return []ocfas.RecurringSchedule{
 			{
 				StartTime:               TimeOfDay{0, 0}.String(),
@@ -243,7 +244,7 @@ func (s ScheduledLimitChanges) ToOCFRecurringSchedules() []ocfas.RecurringSchedu
 				DaysOfWeek:              ocfas.DaysOfWeek{1, 2, 3, 4, 5, 6, 7},
 				InstanceMinCount:        splitScheds[0].InstanceLimits.Min,
 				InstanceMaxCount:        splitScheds[0].InstanceLimits.Max,
-				InitialMinInstanceCount: (splitScheds[0].InstanceLimits.Min + splitScheds[0].InstanceLimits.Max) / 2,
+				InitialMinInstanceCount: &initial,
 			},
 		}
 	}
@@ -321,12 +322,13 @@ func (d daySchedules) ToOCF() []ocfas.RecurringSchedule {
 			periods = append(periods, *toAppend)
 		}
 
+		initial := (sched.InstanceLimits.Min + sched.InstanceLimits.Max) / 2
 		toAppend = &ocfas.RecurringSchedule{
 			StartTime:               sched.StartTime.String(),
 			DaysOfWeek:              ocfas.DaysOfWeek{weekdayToOCF(sched.Weekday)},
 			InstanceMinCount:        sched.InstanceLimits.Min,
 			InstanceMaxCount:        sched.InstanceLimits.Max,
-			InitialMinInstanceCount: (sched.InstanceLimits.Min + sched.InstanceLimits.Max) / 2,
+			InitialMinInstanceCount: &initial,
 		}
 	}
 

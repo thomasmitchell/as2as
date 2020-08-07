@@ -42,7 +42,7 @@ const (
 )
 
 type Schedules struct {
-	Timezone          string              `json:"timezone"`
+	Timezone          string              `json:"timezone,omitempty"`
 	RecurringSchedule []RecurringSchedule `json:"recurring_schedule,omitempty"`
 	SpecificDate      []SpecificDate      `json:"specific_date,omitempty"`
 }
@@ -54,7 +54,7 @@ type RecurringSchedule struct {
 	InstanceMinCount int64      `json:"instance_min_count"`
 	InstanceMaxCount int64      `json:"instance_max_count"`
 	//TODO: Make into pointer?
-	InitialMinInstanceCount int64 `json:"initial_min_instance_count,omitempty"`
+	InitialMinInstanceCount *int64 `json:"initial_min_instance_count,omitempty"`
 }
 
 type DaysOfWeek []int8
@@ -64,5 +64,5 @@ type SpecificDate struct {
 	EndDateTime             string `json:"end_date_time"`
 	InstanceMinCount        int64  `json:"instance_min_count"`
 	InstanceMaxCount        int64  `json:"instance_max_count"`
-	InitialMinInstanceCount int64  `json:"initial_min_instance_count,omitempty"`
+	InitialMinInstanceCount *int64 `json:"initial_min_instance_count,omitempty"`
 }
