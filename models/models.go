@@ -154,9 +154,18 @@ func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
 		return nil, nil
 	}
 
+	minCount, maxCount := a.InstanceLimits.Min, a.InstanceLimits.Max
+	if minCount <= 0 {
+		minCount = 1
+	}
+
+	if maxCount <= 0 {
+		maxCount = 1
+	}
+
 	ret := &ocfas.Policy{
-		InstanceMinCount: a.InstanceLimits.Min,
-		InstanceMaxCount: a.InstanceLimits.Max,
+		InstanceMinCount: minCount,
+		InstanceMaxCount: maxCount,
 	}
 
 	for i := range a.Rules {
