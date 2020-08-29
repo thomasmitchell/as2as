@@ -170,10 +170,11 @@ func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
 
 	for i := range a.Rules {
 		var err error
-		ret.ScalingRules, err = a.Rules[i].ToOCFScalingRules()
+		rules, err := a.Rules[i].ToOCFScalingRules()
 		if err != nil {
 			return nil, err
 		}
+		ret.ScalingRules = append(ret.ScalingRules, rules...)
 	}
 	recurringScheds := a.ScheduledLimitChanges.ToOCFRecurringSchedules()
 	if len(recurringScheds) > 0 {
@@ -181,6 +182,10 @@ func (a App) ToOCFPolicy() (*ocfas.Policy, error) {
 			Timezone:          "Etc/UTC",
 			RecurringSchedule: recurringScheds,
 		}
+	}
+
+	if len(ret.ScalingRules) == 0 {
+		ret.ScalingRules = make([]ocfas.ScalingRule, 0)
 	}
 
 	return ret, nil

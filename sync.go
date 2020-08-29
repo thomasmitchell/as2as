@@ -21,6 +21,7 @@ type syncCmd struct {
 	OCFASHost           *string
 	BrokerGUID          *string
 	ServiceInstanceName *string
+	Workers             *int
 }
 
 func (s *syncCmd) Run() error {
@@ -64,7 +65,7 @@ func (s *syncCmd) Run() error {
 		close(spacesToCreateInstances)
 	}()
 
-	const numWorkers int = 8
+	numWorkers := *(s.Workers)
 
 	instancesWaitGroup := sync.WaitGroup{}
 	instancesWaitGroup.Add(numWorkers)

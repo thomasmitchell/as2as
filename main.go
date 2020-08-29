@@ -31,6 +31,7 @@ func main() {
 		OCFASHost:           syncCom.Flag("ocfas-host", "The OCF Autoscaler API to talk to").Required().String(),
 		BrokerGUID:          syncCom.Flag("broker-guid", "The GUID of the autoscaler service broker").Required().String(),
 		ServiceInstanceName: syncCom.Flag("service-instance-name", "The name of the service instance to create in each space").Default("autoscaler").String(),
+		Workers:             syncCom.Flag("workers", "The number of concurrent workers").Default("8").Int(),
 	}
 
 	app.HelpFlag.Short('h')

@@ -14,7 +14,7 @@ import (
 type Policy struct {
 	InstanceMinCount int64         `json:"instance_min_count"`
 	InstanceMaxCount int64         `json:"instance_max_count"`
-	ScalingRules     []ScalingRule `json:"scaling_rules,omitempty"`
+	ScalingRules     []ScalingRule `json:"scaling_rules"`
 	Schedules        *Schedules    `json:"schedules,omitempty"`
 }
 
